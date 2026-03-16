@@ -1,16 +1,18 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// --- 1. 이미지 및 사운드 로드 (파일명 대소문자 정확히 일치) ---
+// --- 1. 이미지 및 사운드 로드 ---
 const playerImg = new Image(); playerImg.src = 'player.png'; 
 const boosterImg = new Image(); boosterImg.src = 'booster.png'; 
 const bgImg = new Image(); bgImg.src = 'background.png'; 
 
-// 동생이 올린 대문자 파일명 그대로 적용
+// 사운드 객체를 미리 생성하고 로딩을 강제함
 const sndJump = new Audio('Jump.wav');
 const sndBreak = new Audio('Break.wav');
 const sndBgm = new Audio('bgm.wav'); 
 
+sndJump.preload = 'auto';
+sndBreak.preload = 'auto';
 sndBgm.loop = true; 
 sndBgm.volume = 0.3; 
 
@@ -52,12 +54,12 @@ function spawnPlatform(y) {
     }
 }
 
-// 사운드 재생 함수
+// 🔥 사운드 재생 필살기: 겹쳐서 재생 가능하도록 복제본 생성
 function playSound(audio) {
     if (isMuted) return; 
-    const sound = audio.cloneNode();
-    sound.volume = 0.5;
-    sound.play().catch(() => {}); 
+    const soundCopy = audio.cloneNode(); // 원본을 복제해서 사용 (끊김 방지)
+    soundCopy.volume = 0.5;
+    soundCopy.play().catch(e => console.log("재생 지연:", e));
 }
 
 function startBgm() {
@@ -115,22 +117,36 @@ function update() {
             let targetX = plat.centerX + Math.sin((frameCount + plat.offset) * MOVE_SPEED) * 100;
             plat.x = Math.max(0, Math.min(canvas.width - plat.w, targetX));
         }
+        
+        // 🛠️ 발판 부서지는 로직 보강
         if (plat.isBreaking) {
             plat.breakingTimer++;
             plat.x += (Math.random() - 0.5) * 6;
-            if (plat.breakingTimer === 1) playSound(sndBreak);
+            
+            // 처음 부서지기 시작할 때 딱 한 번만 소리 재생
+            if (plat.breakingTimer === 1) {
+                playSound(sndBreak);
+            }
+
             if (plat.breakingTimer > BREAKING_TIME) {
                 platforms.splice(i, 1);
                 spawnPlatform(Math.min(...platforms.map(p => p.y)) - PLATFORM_GAP);
                 continue;
             }
         }
+
         if (player.vy > 0 && player.x + 20 < plat.x + plat.w && player.x + player.w - 20 > plat.x &&
             player.y + player.h > plat.y && player.y + player.h < plat.y + plat.h + player.vy) {
+            
             player.vy = player.normalJump;
             player.isBooster = false;
             playSound(sndJump); 
-            if (plat.type === PLAT_TYPE.BREAKING) plat.isBreaking = true;
+            
+            // 노란색 발판이면 부서지기 시작!
+            if (plat.type === PLAT_TYPE.BREAKING && !plat.isBreaking) {
+                plat.isBreaking = true;
+                plat.breakingTimer = 0; // 타이머 초기화
+            }
         }
     }
 
