@@ -1,21 +1,22 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// --- 1. 이미지 및 사운드 로드 ---
+// --- 1. 이미지 및 사운드 로드 (파일명 대소문자 정확히 일치) ---
 const playerImg = new Image(); playerImg.src = 'player.png'; 
 const boosterImg = new Image(); boosterImg.src = 'booster.png'; 
 const bgImg = new Image(); bgImg.src = 'background.png'; 
 
-const sndJump = new Audio('jump.wav');
-const sndBreak = new Audio('break.wav');
-const sndBgm = new Audio('bgm.wav');
+// 동생이 올린 대문자 파일명 그대로 적용
+const sndJump = new Audio('Jump.wav');
+const sndBreak = new Audio('Break.wav');
+const sndBgm = new Audio('bgm.wav'); 
+
 sndBgm.loop = true; 
 sndBgm.volume = 0.3; 
 
-// --- 2. 게임 설정 변수 ---
 let player, platforms, items, score, highScore = 0, isGameOver, gravity, keys, frameCount, bgY;
 let bgmStarted = false;
-let isMuted = false; // 음소거 상태 변수
+let isMuted = false;
 
 const PLATFORM_GAP = 140;
 const ITEM_CHANCE = 0.05;
@@ -51,7 +52,7 @@ function spawnPlatform(y) {
     }
 }
 
-// 사운드 재생 함수 (음소거 체크 포함)
+// 사운드 재생 함수
 function playSound(audio) {
     if (isMuted) return; 
     const sound = audio.cloneNode();
@@ -59,37 +60,29 @@ function playSound(audio) {
     sound.play().catch(() => {}); 
 }
 
-// BGM 제어 함수
-function updateBgm() {
-    if (isMuted) {
-        sndBgm.pause();
-    } else if (bgmStarted && !isGameOver) {
-        sndBgm.play().catch(() => {});
+function startBgm() {
+    if (!bgmStarted && !isMuted) {
+        sndBgm.play().then(() => { bgmStarted = true; }).catch(() => {});
     }
 }
 
-// 클릭 이벤트 (BGM 시작 및 음소거 버튼 클릭 감지)
 canvas.addEventListener('mousedown', e => {
+    startBgm();
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
 
-    // 음소거 버튼 영역 클릭 체크 (우측 상단 BEST 옆)
-    if (mx > canvas.width - 50 && mx < canvas.width - 10 && my > 10 && my < 45) {
+    if (mx > canvas.width - 60 && my < 50) {
         isMuted = !isMuted;
-        updateBgm();
+        if (isMuted) sndBgm.pause();
+        else startBgm();
         return; 
-    }
-
-    if (!bgmStarted) {
-        bgmStarted = true;
-        updateBgm();
     }
     if (isGameOver) init();
 });
 
 window.addEventListener('keydown', e => {
-    if (!bgmStarted) { bgmStarted = true; updateBgm(); }
+    startBgm();
     keys[e.code] = true;
     if (isGameOver && (e.code === 'Space')) init();
 });
@@ -101,7 +94,6 @@ function update() {
     frameCount++;
     player.animTimer++;
     
-    // 애니메이션
     if (player.animTimer % ANIM_SPEED === 0) {
         if (player.isBooster && player.vy < 0) player.frameX = 5;
         else if (player.vy >= 0) player.frameX = 6 + (Math.floor(player.animTimer / ANIM_SPEED) % 2);
@@ -162,7 +154,8 @@ function update() {
 
     if (player.y > canvas.height) {
         isGameOver = true;
-        if (Math.floor(score) > highScore) highScore = Math.floor(score); // 최고 기록 갱신
+        if (Math.floor(score) > highScore) highScore = Math.floor(score);
+        sndBgm.pause();
     }
 }
 
@@ -191,16 +184,11 @@ function draw() {
     }
     ctx.restore();
 
-    // --- UI 영역 ---
     ctx.fillStyle = "rgba(0, 0, 0, 0.5)"; ctx.fillRect(0, 0, canvas.width, 50);
     ctx.fillStyle = "#fff"; ctx.font = "bold 18px Arial"; ctx.textAlign = "left";
     ctx.fillText(`SCORE: ${Math.floor(score)}m`, 20, 32);
-    
-    // BEST 스코어 표시 (저장 안 함 버전)
     ctx.fillStyle = "#fed330"; ctx.textAlign = "right";
     ctx.fillText(`BEST: ${highScore}m`, canvas.width - 60, 32);
-
-    // 음소거 버튼 아이콘
     ctx.font = "24px Arial";
     ctx.fillText(isMuted ? "🔇" : "🔊", canvas.width - 15, 35);
 
