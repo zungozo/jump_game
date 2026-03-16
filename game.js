@@ -2,7 +2,6 @@ const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const modeUI = document.getElementById('mode-selection');
 
-// --- 이미지 및 사운드 로드 ---
 const playerImg = new Image(); playerImg.src = './player.png'; 
 const boosterImg = new Image(); boosterImg.src = './booster.png'; 
 const bgImg = new Image(); bgImg.src = './background.png'; 
@@ -19,10 +18,10 @@ sndBgm.volume = 0.3;
 let player, platforms, items, score, highScore = 0, isGameOver, gravity, keys, frameCount, bgY;
 let bgmStarted = false;
 let isMuted = false;
-let controlMode = null; // 'pc' or 'mobile'
+let controlMode = null; 
 
-// --- 조이스틱 변수 ---
-let joystick = { active: false, x: 0, y: 0, currX: 0, currY: 0, radius: 40, maxDist: 50 };
+// 조이스틱 설정 (maxDist를 조절하면 조이스틱의 민감도가 변합니다)
+let joystick = { active: false, x: 0, y: 0, currX: 0, currY: 0, radius: 40, maxDist: 60 };
 
 const PLATFORM_GAP = 140;
 const ITEM_CHANCE = 0.05;
@@ -33,7 +32,6 @@ const ANIM_SPEED = 6;
 
 const PLAT_TYPE = { NORMAL: 'normal', MOVING: 'moving', BREAKING: 'breaking' };
 
-// 모드 선택 함수
 function selectMode(mode) {
     controlMode = mode;
     modeUI.style.display = 'none';
@@ -58,14 +56,10 @@ function spawnPlatform(y) {
 
 function playSound(audio) {
     if (isMuted) return; 
-    audio.pause();
-    audio.currentTime = 0;
+    audio.pause(); audio.currentTime = 0;
     const playPromise = audio.play();
     if (playPromise !== undefined) {
-        playPromise.catch(() => {
-            audio.load();
-            audio.play();
-        });
+        playPromise.catch(() => { audio.load(); audio.play(); });
     }
 }
 
@@ -75,7 +69,6 @@ function startBgm() {
     }
 }
 
-// --- 터치 이벤트 (모바일용) ---
 canvas.addEventListener('touchstart', e => {
     e.preventDefault();
     startBgm();
@@ -84,7 +77,6 @@ canvas.addEventListener('touchstart', e => {
     const tx = touch.clientX - rect.left;
     const ty = touch.clientY - rect.top;
 
-    // 뮤트 버튼 영역 확인
     if (tx > canvas.width - 60 && ty < 50) {
         isMuted = !isMuted;
         if (isMuted) { sndBgm.pause(); bgmStarted = false; } else startBgm();
@@ -112,14 +104,10 @@ canvas.addEventListener('touchmove', e => {
     }
 }, {passive: false});
 
-canvas.addEventListener('touchend', () => {
-    joystick.active = false;
-});
+canvas.addEventListener('touchend', () => { joystick.active = false; });
 
-// --- 기존 이벤트 리스너 ---
 canvas.addEventListener('mousedown', e => {
     if (!controlMode) return;
-    startBgm();
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
@@ -143,7 +131,6 @@ function update() {
     if (isGameOver || !controlMode) return;
     frameCount++; player.animTimer++;
     
-    // 애니메이션 프레임 설정
     if (player.animTimer % ANIM_SPEED === 0) {
         if (player.isBooster && player.vy < 0) player.frameX = 5;
         else if (player.vy >= 0) player.frameX = 6 + (Math.floor(player.animTimer / ANIM_SPEED) % 2);
@@ -152,21 +139,25 @@ function update() {
 
     player.vy += gravity; player.y += player.vy;
 
-    // 조작 로직 (PC/모바일 통합)
     if (controlMode === 'pc') {
         if (keys['ArrowLeft']) { player.x -= 7; player.facingRight = false; }
         if (keys['ArrowRight']) { player.x += 7; player.facingRight = true; }
     } else if (controlMode === 'mobile' && joystick.active) {
         let dx = joystick.currX - joystick.x;
-        if (Math.abs(dx) > 10) { // 데드존 설정
-            player.x += (dx / joystick.maxDist) * 8;
+        if (Math.abs(dx) > 5) { 
+            // 거리 비율에 따른 속도 계산 (최대 7)
+            let moveAmount = (dx / joystick.maxDist) * 7;
+            // 속도 제한 (Clamp)
+            if (moveAmount > 7) moveAmount = 7;
+            if (moveAmount < -7) moveAmount = -7;
+            
+            player.x += moveAmount;
             player.facingRight = dx > 0;
         }
     }
 
     if (player.x + player.w < 0) player.x = canvas.width; if (player.x > canvas.width) player.x = -player.w;
 
-    // 발판 로직
     for (let i = platforms.length - 1; i >= 0; i--) {
         let plat = platforms[i];
         if (plat.type === PLAT_TYPE.MOVING) {
@@ -197,7 +188,6 @@ function update() {
         }
     }
 
-    // 아이템 로직
     items.forEach(item => {
         if (item.active && player.x < item.x + item.w && player.x + player.w > item.x &&
             player.y < item.y + item.h && player.y + player.h > item.y) {
@@ -206,7 +196,6 @@ function update() {
         }
     });
 
-    // 화면 스크롤
     if (player.y < 300) {
         let diff = 300 - player.y; player.y = 300; score += diff / 60;
         bgY = (bgY + diff * 0.4) % canvas.height;
@@ -223,11 +212,9 @@ function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (!controlMode) return;
 
-    // 배경
     ctx.drawImage(bgImg, 0, bgY, canvas.width, canvas.height);
     ctx.drawImage(bgImg, 0, bgY - canvas.height, canvas.width, canvas.height);
 
-    // 발판 및 아이템
     platforms.forEach(plat => {
         if (plat.isBreaking) ctx.globalAlpha = 0.6;
         ctx.fillStyle = (plat.type === PLAT_TYPE.MOVING) ? "#45aaf2" : (plat.type === PLAT_TYPE.BREAKING ? "#fed330" : "#4ecdc4");
@@ -237,7 +224,6 @@ function draw() {
     });
     items.forEach(item => { if (item.active) ctx.drawImage(boosterImg, item.x, item.y, item.w, item.h); });
 
-    // 플레이어
     ctx.save();
     if (player.isBooster) { ctx.shadowBlur = 40; ctx.shadowColor = "white"; }
     if (!player.facingRight) {
@@ -248,7 +234,6 @@ function draw() {
     }
     ctx.restore();
 
-    // UI
     ctx.fillStyle = "rgba(0, 0, 0, 0.5)"; ctx.fillRect(0, 0, canvas.width, 50);
     ctx.fillStyle = "#fff"; ctx.font = "bold 18px Arial"; ctx.textAlign = "left";
     ctx.fillText(`SCORE: ${Math.floor(score)}m`, 20, 32);
@@ -256,14 +241,13 @@ function draw() {
     ctx.fillText(`BEST: ${highScore}m`, canvas.width - 60, 32);
     ctx.font = "24px Arial"; ctx.fillText(isMuted ? "🔇" : "🔊", canvas.width - 15, 35);
 
-    // 가상 조이스틱 그리기
     if (controlMode === 'mobile' && joystick.active) {
         ctx.beginPath();
         ctx.arc(joystick.x, joystick.y, joystick.radius, 0, Math.PI * 2);
         ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
         ctx.fill();
+        
         ctx.beginPath();
-        // 조이스틱 헤드 (제한 범위 내 이동)
         let angle = Math.atan2(joystick.currY - joystick.y, joystick.currX - joystick.x);
         let dist = Math.min(joystick.maxDist, Math.hypot(joystick.currX - joystick.x, joystick.currY - joystick.y));
         let headX = joystick.x + Math.cos(angle) * dist;
@@ -283,4 +267,4 @@ function draw() {
 }
 
 function gameLoop() { update(); draw(); requestAnimationFrame(gameLoop); }
-gameLoop(); // onload 대신 루프는 미리 실행, selectMode 후에 데이터 업데이트 시작
+gameLoop();
