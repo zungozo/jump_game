@@ -22,8 +22,6 @@ let player, platforms, items, score, highScore = 0, isGameOver, gravity, keys, f
 let bgmStarted = false;
 let isMuted = false;
 let controlMode = null; 
-
-// 프레임 보정을 위한 변수
 let lastTime = 0;
 
 const PLATFORM_GAP = 140;
@@ -38,7 +36,10 @@ const PLAT_TYPE = { NORMAL: 'normal', MOVING: 'moving', BREAKING: 'breaking' };
 function selectMode(mode) {
     controlMode = mode;
     modeUI.style.display = 'none';
-    if (mode === 'mobile') mobileUI.style.display = 'flex';
+    if (mode === 'mobile') {
+        mobileUI.style.display = 'flex';
+        // 🔥 모바일 모드일 때는 PC용 마우스/클릭 이벤트를 무시하도록 설정
+    }
     init();
 }
 
@@ -47,7 +48,7 @@ function init() {
     platforms = []; items = []; score = 0; frameCount = 0; bgY = 0; isGameOver = false; gravity = 0.5; keys = {};
     platforms.push({ x: 150, y: 600, w: 100, h: 15, type: PLAT_TYPE.NORMAL });
     for (let i = 1; i < 7; i++) spawnPlatform(600 - (i * PLATFORM_GAP));
-    lastTime = performance.now(); // 시간 초기화
+    lastTime = performance.now();
 }
 
 function spawnPlatform(y) {
@@ -73,15 +74,30 @@ function startBgm() {
     }
 }
 
-// 모바일 버튼 제어
-btnLeft.addEventListener('touchstart', (e) => { e.preventDefault(); startBgm(); keys['ArrowLeft'] = true; btnLeft.classList.add('active'); }, {passive: false});
-btnLeft.addEventListener('touchend', (e) => { e.preventDefault(); keys['ArrowLeft'] = false; btnLeft.classList.remove('active'); }, {passive: false});
-btnRight.addEventListener('touchstart', (e) => { e.preventDefault(); startBgm(); keys['ArrowRight'] = true; btnRight.classList.add('active'); }, {passive: false});
-btnRight.addEventListener('touchend', (e) => { e.preventDefault(); keys['ArrowRight'] = false; btnRight.classList.remove('active'); }, {passive: false});
+// 🔥 [모바일 전용 이벤트] e.preventDefault()와 stopPropagation()으로 중복 실행 철저히 방지
+const handleMobileTouch = (e, key, isDown) => {
+    e.preventDefault();
+    e.stopPropagation(); // 이벤트가 부모나 캔버스로 퍼지는 걸 막음
+    startBgm();
+    keys[key] = isDown;
+    if (isDown) e.target.classList.add('active');
+    else e.target.classList.remove('active');
+};
 
+btnLeft.addEventListener('touchstart', (e) => handleMobileTouch(e, 'ArrowLeft', true), {passive: false});
+btnLeft.addEventListener('touchend', (e) => handleMobileTouch(e, 'ArrowLeft', false), {passive: false});
+btnRight.addEventListener('touchstart', (e) => handleMobileTouch(e, 'ArrowRight', true), {passive: false});
+btnRight.addEventListener('touchend', (e) => handleMobileTouch(e, 'ArrowRight', false), {passive: false});
+
+// 캔버스 터치 (재시작 및 사운드 전용)
 canvas.addEventListener('touchstart', (e) => {
     e.preventDefault();
+    e.stopPropagation();
     startBgm();
+    if (isGameOver) {
+        init();
+        return;
+    }
     const rect = canvas.getBoundingClientRect();
     const tx = e.touches[0].clientX - rect.left;
     const ty = e.touches[0].clientY - rect.top;
@@ -89,25 +105,36 @@ canvas.addEventListener('touchstart', (e) => {
         isMuted = !isMuted;
         if (isMuted) { sndBgm.pause(); bgmStarted = false; } else startBgm();
     }
-    if (isGameOver) init();
 }, {passive: false});
 
-window.addEventListener('keydown', e => { startBgm(); keys[e.code] = true; if (isGameOver && e.code === 'Space') init(); });
-window.addEventListener('keyup', e => { keys[e.code] = false; });
+// 🔥 [PC 전용 이벤트] 모바일에서는 실행되지 않도록 가드 설정
+window.addEventListener('keydown', e => { 
+    if (controlMode !== 'pc') return;
+    startBgm(); 
+    keys[e.code] = true; 
+    if (isGameOver && e.code === 'Space') init(); 
+});
+window.addEventListener('keyup', e => { 
+    if (controlMode !== 'pc') return;
+    keys[e.code] = false; 
+});
+
+// PC용 마우스 클릭 재시작 방지 (모바일 중첩 방지)
+canvas.addEventListener('mousedown', (e) => {
+    if (controlMode !== 'pc') return;
+    if (isGameOver) init();
+});
 
 function update() {
     if (isGameOver || !controlMode) return;
-
     frameCount++; player.animTimer++;
     
-    // 애니메이션
     if (player.animTimer % ANIM_SPEED === 0) {
         if (player.isBooster && player.vy < 0) player.frameX = 5;
         else if (player.vy >= 0) player.frameX = 6 + (Math.floor(player.animTimer / ANIM_SPEED) % 2);
         else player.frameX = (player.frameX + 1) % 5;
     }
 
-    // 물리 연산
     player.vy += gravity;
     player.y += player.vy;
 
@@ -117,7 +144,6 @@ function update() {
     if (player.x + player.w < 0) player.x = canvas.width; 
     if (player.x > canvas.width) player.x = -player.w;
 
-    // 발판 체크
     for (let i = platforms.length - 1; i >= 0; i--) {
         let plat = platforms[i];
         if (plat.type === PLAT_TYPE.MOVING) {
@@ -144,7 +170,6 @@ function update() {
         }
     }
 
-    // 아이템 체크
     items.forEach(item => {
         if (item.active && player.x < item.x + item.w && player.x + player.w > item.x &&
             player.y < item.y + item.h && player.y + player.h > item.y) {
@@ -153,7 +178,6 @@ function update() {
         }
     });
 
-    // 스크롤
     if (player.y < 300) {
         let diff = 300 - player.y; player.y = 300; score += diff / 60;
         bgY = (bgY + diff * 0.4) % canvas.height;
@@ -207,23 +231,12 @@ function draw() {
     }
 }
 
-// 🔥 핵심: 프레임 드랍 발생 시 업데이트를 건너뛰어 물리 현상을 안정화
 function gameLoop(currentTime) {
     const deltaTime = currentTime - lastTime;
     lastTime = currentTime;
-
-    // 만약 프레임 간격이 100ms(0.1초)보다 크면, 브라우저가 멈췄던 것으로 간주하고 
-    // 물리 연산을 건너뛰거나 현재 시간을 기준으로 다시 시작합니다.
-    if (deltaTime < 100) {
-        update();
-    }
-    
+    if (deltaTime < 100) update();
     draw();
     requestAnimationFrame(gameLoop);
 }
 
-// 게임 루프 시작 시점 시간 전달
-requestAnimationFrame((time) => {
-    lastTime = time;
-    gameLoop(time);
-});
+requestAnimationFrame((time) => { lastTime = time; gameLoop(time); });
