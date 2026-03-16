@@ -1,20 +1,18 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// --- 1. 이미지 및 사운드 로드 (경로 명시) ---
-const playerImg = new Image(); playerImg.src = './player.png'; 
-const boosterImg = new Image(); boosterImg.src = './booster.png'; 
-const bgImg = new Image(); bgImg.src = './background.png'; 
+// --- 1. 이미지 및 사운드 로드 (대소문자 엄격 교정) ---
+const playerImg = new Image(); playerImg.src = 'player.png'; 
+const boosterImg = new Image(); boosterImg.src = 'booster.png'; 
+const bgImg = new Image(); bgImg.src = 'background.png'; 
 
-// 사운드 파일 생성 (대문자/소문자 철저히 동생 파일에 맞춤)
-const sndJump = new Audio('./Jump.wav');
-const sndBreak = new Audio('./Break.wav');
-const sndBgm = new Audio('./bgm.wav'); 
+// 파일명 정확히 일치시킴
+const sndJump = new Audio('Jump.wav');   // 대문자 J
+const sndBreak = new Audio('break.wav'); // 소문자 b (동생 파일명 기준)
+const sndBgm = new Audio('bgm.wav');     // 소문자 b
 
-// 브라우저가 미리 읽어두도록 설정
 sndJump.preload = 'auto';
 sndBreak.preload = 'auto';
-sndBgm.preload = 'auto';
 sndBgm.loop = true; 
 sndBgm.volume = 0.3; 
 
@@ -22,83 +20,60 @@ let player, platforms, items, score, highScore = 0, isGameOver, gravity, keys, f
 let bgmStarted = false;
 let isMuted = false;
 
+// ... (초기화 및 발판 생성 로직은 동일) ...
 const PLATFORM_GAP = 140;
 const ITEM_CHANCE = 0.05;
 const BREAKING_TIME = 15;
 const MOVE_SPEED = 0.02;
 const SPRITE_SIZE = 32; 
 const ANIM_SPEED = 6;   
-
 const PLAT_TYPE = { NORMAL: 'normal', MOVING: 'moving', BREAKING: 'breaking' };
 
 function init() {
-    player = { 
-        x: 168, y: 500, w: 64, h: 64, 
-        vy: 0, normalJump: -13, boosterJump: -38, 
-        isBooster: false,
-        frameX: 0, animTimer: 0, facingRight: true 
-    };
-    platforms = []; items = []; score = 0; frameCount = 0;
-    bgY = 0; isGameOver = false; gravity = 0.5; keys = {};
-    
+    player = { x: 168, y: 500, w: 64, h: 64, vy: 0, normalJump: -13, boosterJump: -38, isBooster: false, frameX: 0, animTimer: 0, facingRight: true };
+    platforms = []; items = []; score = 0; frameCount = 0; bgY = 0; isGameOver = false; gravity = 0.5; keys = {};
     platforms.push({ x: 150, y: 600, w: 100, h: 15, type: PLAT_TYPE.NORMAL });
     for (let i = 1; i < 7; i++) spawnPlatform(600 - (i * PLATFORM_GAP));
 }
 
 function spawnPlatform(y) {
-    const w = 70;
-    const x = 50 + Math.random() * (canvas.width - 100 - w);
-    const randomTypeVal = Math.random();
-    let type = (randomTypeVal < 0.3) ? PLAT_TYPE.MOVING : (randomTypeVal < 0.6 ? PLAT_TYPE.BREAKING : PLAT_TYPE.NORMAL);
+    const w = 70; const x = 50 + Math.random() * (canvas.width - 100 - w);
+    const r = Math.random();
+    let type = (r < 0.3) ? PLAT_TYPE.MOVING : (r < 0.6 ? PLAT_TYPE.BREAKING : PLAT_TYPE.NORMAL);
     platforms.push({ x, y, w, h: 15, type, centerX: x, offset: Math.random() * 100, isBreaking: false, breakingTimer: 0 });
-    if (type === PLAT_TYPE.NORMAL && Math.random() < ITEM_CHANCE) {
-        items.push({ x: x + w/2 - 15, y: y - 35, w: 30, h: 30, active: true });
-    }
+    if (type === PLAT_TYPE.NORMAL && Math.random() < ITEM_CHANCE) items.push({ x: x + w/2 - 15, y: y - 35, w: 30, h: 30, active: true });
 }
 
-// 사운드 재생 함수 (복제 방식 유지)
+// 사운드 재생 필살기
 function playSound(audio) {
     if (isMuted) return; 
     const soundCopy = audio.cloneNode();
     soundCopy.volume = 0.5;
-    soundCopy.play().catch(e => console.log("효과음 재생 에러:", e));
+    soundCopy.play().catch(() => {});
 }
 
-// 배경음악 시작 함수
 function startBgm() {
-    if (!isMuted && !bgmStarted) {
-        sndBgm.play().then(() => {
-            bgmStarted = true;
-        }).catch(e => console.log("BGM 대기 중..."));
+    if (!bgmStarted && !isMuted) {
+        sndBgm.play().then(() => { bgmStarted = true; }).catch(() => {});
     }
 }
 
-// 클릭이나 키 입력 시 배경음악 활성화
-function handleInteraction() {
-    startBgm();
-}
-
+// 클릭/키보드 입력 시 BGM 재생 트리거
 canvas.addEventListener('mousedown', e => {
-    handleInteraction();
+    startBgm();
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-
     if (mx > canvas.width - 60 && my < 50) {
         isMuted = !isMuted;
-        if (isMuted) {
-            sndBgm.pause();
-            bgmStarted = false;
-        } else {
-            startBgm();
-        }
+        if (isMuted) { sndBgm.pause(); bgmStarted = false; } else startBgm();
         return; 
     }
     if (isGameOver) init();
 });
 
 window.addEventListener('keydown', e => {
-    handleInteraction();
+    startBgm();
     keys[e.code] = true;
     if (isGameOver && (e.code === 'Space')) init();
 });
@@ -107,8 +82,7 @@ window.addEventListener('keyup', e => { keys[e.code] = false; });
 
 function update() {
     if (isGameOver) return;
-    frameCount++;
-    player.animTimer++;
+    frameCount++; player.animTimer++;
     
     if (player.animTimer % ANIM_SPEED === 0) {
         if (player.isBooster && player.vy < 0) player.frameX = 5;
@@ -116,14 +90,10 @@ function update() {
         else player.frameX = (player.frameX + 1) % 5;
     }
 
-    player.vy += gravity;
-    player.y += player.vy;
-
+    player.vy += gravity; player.y += player.vy;
     if (keys['ArrowLeft']) { player.x -= 7; player.facingRight = false; }
     if (keys['ArrowRight']) { player.x += 7; player.facingRight = true; }
-
-    if (player.x + player.w < 0) player.x = canvas.width;
-    if (player.x > canvas.width) player.x = -player.w;
+    if (player.x + player.w < 0) player.x = canvas.width; if (player.x > canvas.width) player.x = -player.w;
 
     for (let i = platforms.length - 1; i >= 0; i--) {
         let plat = platforms[i];
@@ -135,12 +105,7 @@ function update() {
         if (plat.isBreaking) {
             plat.breakingTimer++;
             plat.x += (Math.random() - 0.5) * 6;
-            
-            // 타이머 1일 때 소리 재생 (playSound 함수 사용)
-            if (plat.breakingTimer === 1) {
-                playSound(sndBreak);
-            }
-
+            if (plat.breakingTimer === 1) playSound(sndBreak); // 소문자 break 재생
             if (plat.breakingTimer > BREAKING_TIME) {
                 platforms.splice(i, 1);
                 spawnPlatform(Math.min(...platforms.map(p => p.y)) - PLATFORM_GAP);
@@ -150,11 +115,9 @@ function update() {
 
         if (player.vy > 0 && player.x + 20 < plat.x + plat.w && player.x + player.w - 20 > plat.x &&
             player.y + player.h > plat.y && player.y + player.h < plat.y + plat.h + player.vy) {
-            
             player.vy = player.normalJump;
             player.isBooster = false;
-            playSound(sndJump); 
-            
+            playSound(sndJump); // 대문자 Jump 재생
             if (plat.type === PLAT_TYPE.BREAKING && !plat.isBreaking) {
                 plat.isBreaking = true;
                 plat.breakingTimer = 0;
@@ -179,20 +142,13 @@ function update() {
         });
         items.forEach(item => { item.y += diff; if (item.y > canvas.height) items.splice(items.indexOf(item), 1); });
     }
-
-    if (player.y > canvas.height) {
-        isGameOver = true;
-        if (Math.floor(score) > highScore) highScore = Math.floor(score);
-        sndBgm.pause();
-        bgmStarted = false; // 죽으면 플래그 초기화
-    }
+    if (player.y > canvas.height) { isGameOver = true; if (Math.floor(score) > highScore) highScore = Math.floor(score); sndBgm.pause(); bgmStarted = false; }
 }
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(bgImg, 0, bgY, canvas.width, canvas.height);
     ctx.drawImage(bgImg, 0, bgY - canvas.height, canvas.width, canvas.height);
-
     platforms.forEach(plat => {
         if (plat.isBreaking) ctx.globalAlpha = 0.6;
         ctx.fillStyle = (plat.type === PLAT_TYPE.MOVING) ? "#45aaf2" : (plat.type === PLAT_TYPE.BREAKING ? "#fed330" : "#4ecdc4");
@@ -200,9 +156,7 @@ function draw() {
         ctx.fillStyle = "rgba(255, 255, 255, 0.3)"; ctx.fillRect(plat.x, plat.y, plat.w, 4);
         ctx.globalAlpha = 1.0;
     });
-
     items.forEach(item => { if (item.active) ctx.drawImage(boosterImg, item.x, item.y, item.w, item.h); });
-
     ctx.save();
     if (player.isBooster) { ctx.shadowBlur = 40; ctx.shadowColor = "white"; }
     if (!player.facingRight) {
@@ -212,15 +166,12 @@ function draw() {
         ctx.drawImage(playerImg, player.frameX * SPRITE_SIZE, 0, SPRITE_SIZE, SPRITE_SIZE, player.x, player.y, player.w, player.h);
     }
     ctx.restore();
-
     ctx.fillStyle = "rgba(0, 0, 0, 0.5)"; ctx.fillRect(0, 0, canvas.width, 50);
     ctx.fillStyle = "#fff"; ctx.font = "bold 18px Arial"; ctx.textAlign = "left";
     ctx.fillText(`SCORE: ${Math.floor(score)}m`, 20, 32);
     ctx.fillStyle = "#fed330"; ctx.textAlign = "right";
     ctx.fillText(`BEST: ${highScore}m`, canvas.width - 60, 32);
-    ctx.font = "24px Arial";
-    ctx.fillText(isMuted ? "🔇" : "🔊", canvas.width - 15, 35);
-
+    ctx.font = "24px Arial"; ctx.fillText(isMuted ? "🔇" : "🔊", canvas.width - 15, 35);
     if (isGameOver) {
         ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(0,0,canvas.width, canvas.height);
         ctx.fillStyle = "#fff"; ctx.font = "30px Arial"; ctx.textAlign = "center";
