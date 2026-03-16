@@ -21,8 +21,11 @@ let bgmStarted = false;
 let isMuted = false;
 let controlMode = null; 
 
-// 🔥 배속 버그 방지용 변수
-let gameLoopId = null; 
+// 🔥 프레임 고정(FPS)을 위한 변수
+let gameLoopId = null;
+let lastTime = 0;
+const fps = 60; // 초당 60프레임으로 고정
+const fpsInterval = 1000 / fps;
 
 const PLATFORM_GAP = 140;
 const ITEM_CHANCE = 0.05;
@@ -41,10 +44,7 @@ function selectMode(mode) {
 }
 
 function init() {
-    // 🔥 만약 이미 루프가 돌고 있다면 취소 (중복 실행 방지 핵심)
-    if (gameLoopId) {
-        cancelAnimationFrame(gameLoopId);
-    }
+    if (gameLoopId) cancelAnimationFrame(gameLoopId);
 
     player = { x: 168, y: 500, w: 64, h: 64, vy: 0, normalJump: -13, boosterJump: -38, isBooster: false, frameX: 0, animTimer: 0, facingRight: true };
     platforms = []; items = []; score = 0; frameCount = 0; bgY = 0; isGameOver = false; gravity = 0.5; keys = {};
@@ -52,8 +52,8 @@ function init() {
     platforms.push({ x: 150, y: 600, w: 100, h: 15, type: PLAT_TYPE.NORMAL });
     for (let i = 1; i < 7; i++) spawnPlatform(600 - (i * PLATFORM_GAP));
 
-    // 게임 루프 시작
-    gameLoop();
+    lastTime = performance.now();
+    gameLoop(lastTime);
 }
 
 function spawnPlatform(y) {
@@ -76,7 +76,7 @@ function startBgm() {
     }
 }
 
-// 모바일 터치 이벤트 (좌우 이동만 제어)
+// 터치 이벤트
 const handleTouch = (e, key, isDown) => {
     e.preventDefault();
     startBgm();
@@ -112,18 +112,15 @@ function update() {
         else player.frameX = (player.frameX + 1) % 5;
     }
 
-    // 물리 연산
     player.vy += gravity;
     player.y += player.vy;
 
-    // 좌우 이동 (점프는 자동)
     if (keys['ArrowLeft']) { player.x -= 7; player.facingRight = false; }
     if (keys['ArrowRight']) { player.x += 7; player.facingRight = true; }
 
     if (player.x + player.w < 0) player.x = canvas.width; 
     if (player.x > canvas.width) player.x = -player.w;
 
-    // 발판 체크 (자동 점프 로직 포함)
     for (let i = platforms.length - 1; i >= 0; i--) {
         let plat = platforms[i];
         if (plat.type === PLAT_TYPE.MOVING) {
@@ -140,7 +137,6 @@ function update() {
                 continue;
             }
         }
-        // 발판 밟기 (자동 점프)
         if (player.vy > 0 && player.x + 20 < plat.x + plat.w && player.x + player.w - 20 > plat.x &&
             player.y + player.h > plat.y && player.y + player.h < plat.y + plat.h + player.vy + 2) {
             player.vy = player.normalJump;
@@ -211,8 +207,17 @@ function draw() {
     }
 }
 
-function gameLoop() {
-    update();
-    draw();
+// 🔥 [핵심] 고주사율 폰에서도 60FPS를 유지하도록 시간 차이를 계산해 실행
+function gameLoop(timestamp) {
     gameLoopId = requestAnimationFrame(gameLoop);
+
+    const elapsed = timestamp - lastTime;
+
+    // 마지막 계산으로부터 16.6ms(60FPS) 이상 지났을 때만 업데이트 실행
+    if (elapsed > fpsInterval) {
+        // 정확한 간격을 유지하기 위해 보정
+        lastTime = timestamp - (elapsed % fpsInterval);
+        update();
+        draw();
+    }
 }
