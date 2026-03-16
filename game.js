@@ -1,16 +1,17 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// --- 1. 이미지 및 사운드 로드 (대소문자 엄격 교정) ---
-const playerImg = new Image(); playerImg.src = 'player.png'; 
-const boosterImg = new Image(); boosterImg.src = 'booster.png'; 
-const bgImg = new Image(); bgImg.src = 'background.png'; 
+// --- 1. 이미지 및 사운드 로드 (경로 앞에 ./ 추가) ---
+const playerImg = new Image(); playerImg.src = './player.png'; 
+const boosterImg = new Image(); boosterImg.src = './booster.png'; 
+const bgImg = new Image(); bgImg.src = './background.png'; 
 
-// 파일명 정확히 일치시킴
-const sndJump = new Audio('Jump.wav');   // 대문자 J
-const sndBreak = new Audio('break.wav'); // 소문자 b (동생 파일명 기준)
-const sndBgm = new Audio('bgm.wav');     // 소문자 b
+// 사운드 파일 (대소문자 동생 말대로 수정)
+const sndJump = new Audio('./Jump.wav');   // 대문자 J
+const sndBreak = new Audio('./break.wav'); // 소문자 b
+const sndBgm = new Audio('./bgm.wav');     // 소문자 b
 
+// 브라우저가 소리를 낼 준비를 미리 하도록 설정
 sndJump.preload = 'auto';
 sndBreak.preload = 'auto';
 sndBgm.loop = true; 
@@ -20,13 +21,13 @@ let player, platforms, items, score, highScore = 0, isGameOver, gravity, keys, f
 let bgmStarted = false;
 let isMuted = false;
 
-// ... (초기화 및 발판 생성 로직은 동일) ...
 const PLATFORM_GAP = 140;
 const ITEM_CHANCE = 0.05;
 const BREAKING_TIME = 15;
 const MOVE_SPEED = 0.02;
 const SPRITE_SIZE = 32; 
 const ANIM_SPEED = 6;   
+
 const PLAT_TYPE = { NORMAL: 'normal', MOVING: 'moving', BREAKING: 'breaking' };
 
 function init() {
@@ -44,12 +45,22 @@ function spawnPlatform(y) {
     if (type === PLAT_TYPE.NORMAL && Math.random() < ITEM_CHANCE) items.push({ x: x + w/2 - 15, y: y - 35, w: 30, h: 30, active: true });
 }
 
-// 사운드 재생 필살기
+// 🔥 사운드 재생 필살기 (재생 안 될 때 강제 로드 추가)
 function playSound(audio) {
     if (isMuted) return; 
-    const soundCopy = audio.cloneNode();
-    soundCopy.volume = 0.5;
-    soundCopy.play().catch(() => {});
+    
+    // 이미 재생 중이면 멈추고 처음부터 다시
+    audio.pause();
+    audio.currentTime = 0;
+    
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+        playPromise.catch(() => {
+            // 재생 실패 시 (보안 정책 등) 한번 더 시도
+            audio.load();
+            audio.play();
+        });
+    }
 }
 
 function startBgm() {
@@ -58,7 +69,7 @@ function startBgm() {
     }
 }
 
-// 클릭/키보드 입력 시 BGM 재생 트리거
+// 클릭 시 사운드 잠금 해제
 canvas.addEventListener('mousedown', e => {
     startBgm();
     const rect = canvas.getBoundingClientRect();
@@ -105,7 +116,10 @@ function update() {
         if (plat.isBreaking) {
             plat.breakingTimer++;
             plat.x += (Math.random() - 0.5) * 6;
-            if (plat.breakingTimer === 1) playSound(sndBreak); // 소문자 break 재생
+            // 발판이 부르르 떨리기 시작할 때 소리 재생
+            if (plat.breakingTimer === 1) {
+                playSound(sndBreak);
+            }
             if (plat.breakingTimer > BREAKING_TIME) {
                 platforms.splice(i, 1);
                 spawnPlatform(Math.min(...platforms.map(p => p.y)) - PLATFORM_GAP);
@@ -117,7 +131,7 @@ function update() {
             player.y + player.h > plat.y && player.y + player.h < plat.y + plat.h + player.vy) {
             player.vy = player.normalJump;
             player.isBooster = false;
-            playSound(sndJump); // 대문자 Jump 재생
+            playSound(sndJump);
             if (plat.type === PLAT_TYPE.BREAKING && !plat.isBreaking) {
                 plat.isBreaking = true;
                 plat.breakingTimer = 0;
