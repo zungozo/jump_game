@@ -12,16 +12,22 @@ const bgImg = new Image(); bgImg.src = './background.png';
 const sndJump = new Audio('./Jump.wav'); 
 const sndBreak = new Audio('./break.wav');
 const sndBgm = new Audio('./bgm.wav'); 
-sndBgm.loop = true; sndBgm.volume = 0.3; 
+
+sndJump.preload = 'auto';
+sndBreak.preload = 'auto';
+sndBgm.loop = true; 
+sndBgm.volume = 0.3; 
 
 let player, platforms, items, score, highScore = 0, isGameOver, gravity, keys, frameCount, bgY;
-let bgmStarted = false, isMuted = false, controlMode = null; 
+let bgmStarted = false;
+let isMuted = false;
+let controlMode = null; 
 
-// 🔥 물리 속도 고정을 위한 시간 변수
+// 물리 속도 고정 변수
 let gameLoopId = null;
 let lastTime = performance.now();
 const TARGET_FPS = 60;
-const TIME_STEP = 1000 / TARGET_FPS; // 약 16.67ms
+const TIME_STEP = 1000 / TARGET_FPS;
 
 const PLATFORM_GAP = 140;
 const ITEM_CHANCE = 0.05;
@@ -29,30 +35,31 @@ const BREAKING_TIME = 15;
 const MOVE_SPEED = 0.02;
 const SPRITE_SIZE = 32; 
 const ANIM_SPEED = 6;   
+
 const PLAT_TYPE = { NORMAL: 'normal', MOVING: 'moving', BREAKING: 'breaking' };
 
 function selectMode(mode) {
     controlMode = mode;
     modeUI.style.display = 'none';
     if (mode === 'mobile') mobileUI.style.display = 'flex';
+    else mobileUI.style.display = 'none';
     init();
 }
 
 function init() {
     if (gameLoopId) cancelAnimationFrame(gameLoopId);
 
-    // 중력과 점프 수치 조정 (델타 타임 기반이라 기존보다 조금 더 크게 설정)
     player = { 
         x: 168, y: 500, w: 64, h: 64, 
         vy: 0, 
-        normalJump: -15,   // 자동 점프 시 튀어오르는 속도
-        boosterJump: -40,  // 아이템 점프 시 튀어오르는 속도
+        normalJump: -15, 
+        boosterJump: -40, 
         isBooster: false, 
         frameX: 0, animTimer: 0, facingRight: true 
     };
     
     platforms = []; items = []; score = 0; frameCount = 0; bgY = 0; isGameOver = false; 
-    gravity = 0.6; // 일정하게 떨어지는 중력값
+    gravity = 0.6; 
     keys = { ArrowLeft: false, ArrowRight: false, KeyA: false, KeyD: false };
     
     platforms.push({ x: 150, y: 600, w: 100, h: 15, type: PLAT_TYPE.NORMAL });
@@ -72,7 +79,8 @@ function spawnPlatform(y) {
 
 function playSound(audio) {
     if (isMuted) return; 
-    audio.pause(); audio.currentTime = 0;
+    audio.pause(); 
+    audio.currentTime = 0;
     audio.play().catch(() => {});
 }
 
@@ -82,7 +90,18 @@ function startBgm() {
     }
 }
 
-// 모바일 터치 처리 (기본 마우스 동작 방지)
+// 사운드 토글 함수 (공통 사용)
+function toggleMute() {
+    isMuted = !isMuted;
+    if (isMuted) {
+        sndBgm.pause();
+        bgmStarted = false;
+    } else {
+        startBgm();
+    }
+}
+
+// 모바일 터치 이벤트
 const handleTouch = (e, key, isDown) => {
     e.preventDefault();
     startBgm();
@@ -94,34 +113,55 @@ btnLeft.addEventListener('touchend', (e) => handleTouch(e, 'ArrowLeft', false), 
 btnRight.addEventListener('touchstart', (e) => handleTouch(e, 'ArrowRight', true), {passive: false});
 btnRight.addEventListener('touchend', (e) => handleTouch(e, 'ArrowRight', false), {passive: false});
 
+// 캔버스 클릭/터치 (사운드 제어 및 재시작)
+const handleCanvasAction = (clientX, clientY) => {
+    startBgm();
+    if (isGameOver) {
+        init();
+        return;
+    }
+    const rect = canvas.getBoundingClientRect();
+    const tx = clientX - rect.left;
+    const ty = clientY - rect.top;
+    
+    // 우측 상단 스피커 아이콘 클릭 판정
+    if (tx > canvas.width - 60 && ty < 50) {
+        toggleMute();
+    }
+};
+
 canvas.addEventListener('touchstart', (e) => {
     e.preventDefault();
-    startBgm();
-    if (isGameOver) init();
+    handleCanvasAction(e.touches[0].clientX, e.touches[0].clientY);
 }, {passive: false});
 
-window.addEventListener('keydown', e => { 
-    if (controlMode === 'pc') { startBgm(); keys[e.code] = true; if (isGameOver && e.code === 'Space') init(); }
+canvas.addEventListener('mousedown', (e) => {
+    if (controlMode === 'pc') handleCanvasAction(e.clientX, e.clientY);
 });
-window.addEventListener('keyup', e => { if (controlMode === 'pc') keys[e.code] = false; });
 
-// 🔥 물리 업데이트 로직 (핵심: dt를 곱해 속도를 고정)
+// PC 키보드 이벤트
+window.addEventListener('keydown', e => { 
+    if (controlMode === 'pc') {
+        startBgm(); 
+        keys[e.code] = true; 
+        if (isGameOver && e.code === 'Space') init(); 
+    }
+});
+window.addEventListener('keyup', e => { 
+    if (controlMode === 'pc') keys[e.code] = false; 
+});
+
 function update(dt) {
     if (isGameOver || !controlMode) return;
-    
-    // dt 보정값 (60FPS 기준 1.0)
     const ratio = dt / TIME_STEP;
-
     frameCount++; player.animTimer++;
     
-    // 애니메이션 속도 보정
     if (player.animTimer % ANIM_SPEED === 0) {
         if (player.isBooster && player.vy < 0) player.frameX = 5;
         else if (player.vy >= 0) player.frameX = 6 + (Math.floor(player.animTimer / ANIM_SPEED) % 2);
         else player.frameX = (player.frameX + 1) % 5;
     }
 
-    // 🔥 물리 연산: 기기 속도와 상관없이 같은 거리만큼 움직이게 ratio 적용
     player.vy += gravity * ratio;
     player.y += player.vy * ratio;
 
@@ -131,7 +171,6 @@ function update(dt) {
     if (player.x + player.w < 0) player.x = canvas.width; 
     if (player.x > canvas.width) player.x = -player.w;
 
-    // 발판 및 자동 점프
     for (let i = platforms.length - 1; i >= 0; i--) {
         let plat = platforms[i];
         if (plat.type === PLAT_TYPE.MOVING) {
@@ -148,7 +187,6 @@ function update(dt) {
                 continue;
             }
         }
-        // 자동 점프 체크
         if (player.vy > 0 && player.x + 20 < plat.x + plat.w && player.x + player.w - 20 > plat.x &&
             player.y + player.h > plat.y && player.y + player.h < plat.y + plat.h + (player.vy * ratio) + 2) {
             player.vy = player.normalJump;
@@ -182,8 +220,10 @@ function update(dt) {
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (!controlMode) return;
+
     ctx.drawImage(bgImg, 0, bgY, canvas.width, canvas.height);
     ctx.drawImage(bgImg, 0, bgY - canvas.height, canvas.width, canvas.height);
+
     platforms.forEach(plat => {
         if (plat.isBreaking) ctx.globalAlpha = 0.6;
         ctx.fillStyle = (plat.type === PLAT_TYPE.MOVING) ? "#45aaf2" : (plat.type === PLAT_TYPE.BREAKING ? "#fed330" : "#4ecdc4");
@@ -191,7 +231,9 @@ function draw() {
         ctx.fillStyle = "rgba(255, 255, 255, 0.3)"; ctx.fillRect(plat.x, plat.y, plat.w, 4);
         ctx.globalAlpha = 1.0;
     });
+
     items.forEach(item => { if (item.active) ctx.drawImage(boosterImg, item.x, item.y, item.w, item.h); });
+
     ctx.save();
     if (player.isBooster) { ctx.shadowBlur = 40; ctx.shadowColor = "white"; }
     if (!player.facingRight) {
@@ -201,26 +243,31 @@ function draw() {
         ctx.drawImage(playerImg, player.frameX * SPRITE_SIZE, 0, SPRITE_SIZE, SPRITE_SIZE, player.x, player.y, player.w, player.h);
     }
     ctx.restore();
+
+    // 상단 UI (점수 및 사운드 아이콘)
     ctx.fillStyle = "rgba(0, 0, 0, 0.5)"; ctx.fillRect(0, 0, canvas.width, 50);
     ctx.fillStyle = "#fff"; ctx.font = "bold 18px Arial"; ctx.textAlign = "left";
     ctx.fillText(`SCORE: ${Math.floor(score)}m`, 20, 32);
     ctx.fillStyle = "#fed330"; ctx.textAlign = "right";
     ctx.fillText(`BEST: ${highScore}m`, canvas.width - 60, 32);
-    ctx.font = "24px Arial"; ctx.fillText(isMuted ? "🔇" : "🔊", canvas.width - 15, 35);
+    
+    // 사운드 아이콘 그리기
+    ctx.font = "24px Arial";
+    ctx.fillText(isMuted ? "🔇" : "🔊", canvas.width - 15, 35);
+
     if (isGameOver) {
         ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(0,0,canvas.width, canvas.height);
         ctx.fillStyle = "#fff"; ctx.font = "30px Arial"; ctx.textAlign = "center";
         ctx.fillText("GAME OVER", canvas.width/2, canvas.height/2);
+        ctx.font = "16px Arial";
+        ctx.fillText(controlMode === 'pc' ? "Space 또는 클릭으로 재시작" : "화면을 터치하여 재시작", canvas.width/2, canvas.height/2 + 50);
     }
 }
 
-// 🔥 [핵심 루프] 프레임 간의 시간 차이를 구해 물리 엔진에 전달
 function gameLoop(currentTime) {
     const dt = currentTime - lastTime;
     lastTime = currentTime;
-
-    update(dt); // 실제 흐른 시간을 기반으로 계산
+    update(dt);
     draw();
-    
     gameLoopId = requestAnimationFrame(gameLoop);
 }
