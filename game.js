@@ -13,8 +13,6 @@ const sndJump = new Audio('./Jump.wav');
 const sndBreak = new Audio('./break.wav');
 const sndBgm = new Audio('./bgm.wav'); 
 
-sndJump.preload = 'auto';
-sndBreak.preload = 'auto';
 sndBgm.loop = true; 
 sndBgm.volume = 0.3; 
 
@@ -22,7 +20,9 @@ let player, platforms, items, score, highScore = 0, isGameOver, gravity, keys, f
 let bgmStarted = false;
 let isMuted = false;
 let controlMode = null; 
-let lastTime = 0;
+
+// 🔥 배속 버그 방지용 변수
+let gameLoopId = null; 
 
 const PLATFORM_GAP = 140;
 const ITEM_CHANCE = 0.05;
@@ -36,19 +36,24 @@ const PLAT_TYPE = { NORMAL: 'normal', MOVING: 'moving', BREAKING: 'breaking' };
 function selectMode(mode) {
     controlMode = mode;
     modeUI.style.display = 'none';
-    if (mode === 'mobile') {
-        mobileUI.style.display = 'flex';
-        // 🔥 모바일 모드일 때는 PC용 마우스/클릭 이벤트를 무시하도록 설정
-    }
+    if (mode === 'mobile') mobileUI.style.display = 'flex';
     init();
 }
 
 function init() {
+    // 🔥 만약 이미 루프가 돌고 있다면 취소 (중복 실행 방지 핵심)
+    if (gameLoopId) {
+        cancelAnimationFrame(gameLoopId);
+    }
+
     player = { x: 168, y: 500, w: 64, h: 64, vy: 0, normalJump: -13, boosterJump: -38, isBooster: false, frameX: 0, animTimer: 0, facingRight: true };
     platforms = []; items = []; score = 0; frameCount = 0; bgY = 0; isGameOver = false; gravity = 0.5; keys = {};
+    
     platforms.push({ x: 150, y: 600, w: 100, h: 15, type: PLAT_TYPE.NORMAL });
     for (let i = 1; i < 7; i++) spawnPlatform(600 - (i * PLATFORM_GAP));
-    lastTime = performance.now();
+
+    // 게임 루프 시작
+    gameLoop();
 }
 
 function spawnPlatform(y) {
@@ -62,10 +67,7 @@ function spawnPlatform(y) {
 function playSound(audio) {
     if (isMuted) return; 
     audio.pause(); audio.currentTime = 0;
-    const playPromise = audio.play();
-    if (playPromise !== undefined) {
-        playPromise.catch(() => { audio.load(); audio.play(); });
-    }
+    audio.play().catch(() => {});
 }
 
 function startBgm() {
@@ -74,56 +76,31 @@ function startBgm() {
     }
 }
 
-// 🔥 [모바일 전용 이벤트] e.preventDefault()와 stopPropagation()으로 중복 실행 철저히 방지
-const handleMobileTouch = (e, key, isDown) => {
+// 모바일 터치 이벤트 (좌우 이동만 제어)
+const handleTouch = (e, key, isDown) => {
     e.preventDefault();
-    e.stopPropagation(); // 이벤트가 부모나 캔버스로 퍼지는 걸 막음
     startBgm();
     keys[key] = isDown;
     if (isDown) e.target.classList.add('active');
     else e.target.classList.remove('active');
 };
 
-btnLeft.addEventListener('touchstart', (e) => handleMobileTouch(e, 'ArrowLeft', true), {passive: false});
-btnLeft.addEventListener('touchend', (e) => handleMobileTouch(e, 'ArrowLeft', false), {passive: false});
-btnRight.addEventListener('touchstart', (e) => handleMobileTouch(e, 'ArrowRight', true), {passive: false});
-btnRight.addEventListener('touchend', (e) => handleMobileTouch(e, 'ArrowRight', false), {passive: false});
+btnLeft.addEventListener('touchstart', (e) => handleTouch(e, 'ArrowLeft', true), {passive: false});
+btnLeft.addEventListener('touchend', (e) => handleTouch(e, 'ArrowLeft', false), {passive: false});
+btnRight.addEventListener('touchstart', (e) => handleTouch(e, 'ArrowRight', true), {passive: false});
+btnRight.addEventListener('touchend', (e) => handleTouch(e, 'ArrowRight', false), {passive: false});
 
-// 캔버스 터치 (재시작 및 사운드 전용)
 canvas.addEventListener('touchstart', (e) => {
     e.preventDefault();
-    e.stopPropagation();
     startBgm();
-    if (isGameOver) {
-        init();
-        return;
-    }
-    const rect = canvas.getBoundingClientRect();
-    const tx = e.touches[0].clientX - rect.left;
-    const ty = e.touches[0].clientY - rect.top;
-    if (tx > canvas.width - 60 && ty < 50) {
-        isMuted = !isMuted;
-        if (isMuted) { sndBgm.pause(); bgmStarted = false; } else startBgm();
-    }
+    if (isGameOver) init();
 }, {passive: false});
 
-// 🔥 [PC 전용 이벤트] 모바일에서는 실행되지 않도록 가드 설정
 window.addEventListener('keydown', e => { 
-    if (controlMode !== 'pc') return;
-    startBgm(); 
-    keys[e.code] = true; 
+    startBgm(); keys[e.code] = true; 
     if (isGameOver && e.code === 'Space') init(); 
 });
-window.addEventListener('keyup', e => { 
-    if (controlMode !== 'pc') return;
-    keys[e.code] = false; 
-});
-
-// PC용 마우스 클릭 재시작 방지 (모바일 중첩 방지)
-canvas.addEventListener('mousedown', (e) => {
-    if (controlMode !== 'pc') return;
-    if (isGameOver) init();
-});
+window.addEventListener('keyup', e => { keys[e.code] = false; });
 
 function update() {
     if (isGameOver || !controlMode) return;
@@ -135,15 +112,18 @@ function update() {
         else player.frameX = (player.frameX + 1) % 5;
     }
 
+    // 물리 연산
     player.vy += gravity;
     player.y += player.vy;
 
+    // 좌우 이동 (점프는 자동)
     if (keys['ArrowLeft']) { player.x -= 7; player.facingRight = false; }
     if (keys['ArrowRight']) { player.x += 7; player.facingRight = true; }
 
     if (player.x + player.w < 0) player.x = canvas.width; 
     if (player.x > canvas.width) player.x = -player.w;
 
+    // 발판 체크 (자동 점프 로직 포함)
     for (let i = platforms.length - 1; i >= 0; i--) {
         let plat = platforms[i];
         if (plat.type === PLAT_TYPE.MOVING) {
@@ -160,6 +140,7 @@ function update() {
                 continue;
             }
         }
+        // 발판 밟기 (자동 점프)
         if (player.vy > 0 && player.x + 20 < plat.x + plat.w && player.x + player.w - 20 > plat.x &&
             player.y + player.h > plat.y && player.y + player.h < plat.y + plat.h + player.vy + 2) {
             player.vy = player.normalJump;
@@ -227,16 +208,11 @@ function draw() {
         ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(0,0,canvas.width, canvas.height);
         ctx.fillStyle = "#fff"; ctx.font = "30px Arial"; ctx.textAlign = "center";
         ctx.fillText("GAME OVER", canvas.width/2, canvas.height/2);
-        ctx.font = "16px Arial"; ctx.fillText(controlMode === 'pc' ? "Space 키로 재시작" : "화면을 터치하여 재시작", canvas.width/2, canvas.height/2 + 80);
     }
 }
 
-function gameLoop(currentTime) {
-    const deltaTime = currentTime - lastTime;
-    lastTime = currentTime;
-    if (deltaTime < 100) update();
+function gameLoop() {
+    update();
     draw();
-    requestAnimationFrame(gameLoop);
+    gameLoopId = requestAnimationFrame(gameLoop);
 }
-
-requestAnimationFrame((time) => { lastTime = time; gameLoop(time); });
