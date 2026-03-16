@@ -1,18 +1,20 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// --- 1. 이미지 및 사운드 로드 ---
-const playerImg = new Image(); playerImg.src = 'player.png'; 
-const boosterImg = new Image(); boosterImg.src = 'booster.png'; 
-const bgImg = new Image(); bgImg.src = 'background.png'; 
+// --- 1. 이미지 및 사운드 로드 (경로 명시) ---
+const playerImg = new Image(); playerImg.src = './player.png'; 
+const boosterImg = new Image(); boosterImg.src = './booster.png'; 
+const bgImg = new Image(); bgImg.src = './background.png'; 
 
-// 사운드 객체를 미리 생성하고 로딩을 강제함
-const sndJump = new Audio('Jump.wav');
-const sndBreak = new Audio('Break.wav');
-const sndBgm = new Audio('bgm.wav'); 
+// 사운드 파일 생성 (대문자/소문자 철저히 동생 파일에 맞춤)
+const sndJump = new Audio('./Jump.wav');
+const sndBreak = new Audio('./Break.wav');
+const sndBgm = new Audio('./bgm.wav'); 
 
+// 브라우저가 미리 읽어두도록 설정
 sndJump.preload = 'auto';
 sndBreak.preload = 'auto';
+sndBgm.preload = 'auto';
 sndBgm.loop = true; 
 sndBgm.volume = 0.3; 
 
@@ -54,37 +56,49 @@ function spawnPlatform(y) {
     }
 }
 
-// 🔥 사운드 재생 필살기: 겹쳐서 재생 가능하도록 복제본 생성
+// 사운드 재생 함수 (복제 방식 유지)
 function playSound(audio) {
     if (isMuted) return; 
-    const soundCopy = audio.cloneNode(); // 원본을 복제해서 사용 (끊김 방지)
+    const soundCopy = audio.cloneNode();
     soundCopy.volume = 0.5;
-    soundCopy.play().catch(e => console.log("재생 지연:", e));
+    soundCopy.play().catch(e => console.log("효과음 재생 에러:", e));
 }
 
+// 배경음악 시작 함수
 function startBgm() {
-    if (!bgmStarted && !isMuted) {
-        sndBgm.play().then(() => { bgmStarted = true; }).catch(() => {});
+    if (!isMuted && !bgmStarted) {
+        sndBgm.play().then(() => {
+            bgmStarted = true;
+        }).catch(e => console.log("BGM 대기 중..."));
     }
 }
 
-canvas.addEventListener('mousedown', e => {
+// 클릭이나 키 입력 시 배경음악 활성화
+function handleInteraction() {
     startBgm();
+}
+
+canvas.addEventListener('mousedown', e => {
+    handleInteraction();
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
 
     if (mx > canvas.width - 60 && my < 50) {
         isMuted = !isMuted;
-        if (isMuted) sndBgm.pause();
-        else startBgm();
+        if (isMuted) {
+            sndBgm.pause();
+            bgmStarted = false;
+        } else {
+            startBgm();
+        }
         return; 
     }
     if (isGameOver) init();
 });
 
 window.addEventListener('keydown', e => {
-    startBgm();
+    handleInteraction();
     keys[e.code] = true;
     if (isGameOver && (e.code === 'Space')) init();
 });
@@ -118,12 +132,11 @@ function update() {
             plat.x = Math.max(0, Math.min(canvas.width - plat.w, targetX));
         }
         
-        // 🛠️ 발판 부서지는 로직 보강
         if (plat.isBreaking) {
             plat.breakingTimer++;
             plat.x += (Math.random() - 0.5) * 6;
             
-            // 처음 부서지기 시작할 때 딱 한 번만 소리 재생
+            // 타이머 1일 때 소리 재생 (playSound 함수 사용)
             if (plat.breakingTimer === 1) {
                 playSound(sndBreak);
             }
@@ -142,10 +155,9 @@ function update() {
             player.isBooster = false;
             playSound(sndJump); 
             
-            // 노란색 발판이면 부서지기 시작!
             if (plat.type === PLAT_TYPE.BREAKING && !plat.isBreaking) {
                 plat.isBreaking = true;
-                plat.breakingTimer = 0; // 타이머 초기화
+                plat.breakingTimer = 0;
             }
         }
     }
@@ -172,6 +184,7 @@ function update() {
         isGameOver = true;
         if (Math.floor(score) > highScore) highScore = Math.floor(score);
         sndBgm.pause();
+        bgmStarted = false; // 죽으면 플래그 초기화
     }
 }
 
