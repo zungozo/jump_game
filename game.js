@@ -1,7 +1,9 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const modeUI = document.getElementById('mode-selection');
+const mobileUI = document.getElementById('mobile-ui');
 
+// --- 이미지 및 사운드 로드 ---
 const playerImg = new Image(); playerImg.src = './player.png'; 
 const boosterImg = new Image(); boosterImg.src = './booster.png'; 
 const bgImg = new Image(); bgImg.src = './background.png'; 
@@ -20,9 +22,6 @@ let bgmStarted = false;
 let isMuted = false;
 let controlMode = null; 
 
-// 조이스틱 설정 (maxDist를 조절하면 조이스틱의 민감도가 변합니다)
-let joystick = { active: false, x: 0, y: 0, currX: 0, currY: 0, radius: 40, maxDist: 60 };
-
 const PLATFORM_GAP = 140;
 const ITEM_CHANCE = 0.05;
 const BREAKING_TIME = 15;
@@ -35,6 +34,7 @@ const PLAT_TYPE = { NORMAL: 'normal', MOVING: 'moving', BREAKING: 'breaking' };
 function selectMode(mode) {
     controlMode = mode;
     modeUI.style.display = 'none';
+    if (mode === 'mobile') mobileUI.style.display = 'block';
     init();
     if (!bgmStarted) startBgm();
 }
@@ -69,43 +69,54 @@ function startBgm() {
     }
 }
 
-canvas.addEventListener('touchstart', e => {
+// --- 모바일 터치 핸들링 (버튼 방식) ---
+function handleTouch(e) {
+    if (controlMode !== 'mobile') return;
     e.preventDefault();
     startBgm();
+
+    // 터치가 끝났을 때는 모든 키 해제 후 현재 활성화된 터치들만 다시 체크
+    if (e.type === 'touchend' || e.type === 'touchcancel') {
+        keys['ArrowLeft'] = false;
+        keys['ArrowRight'] = false;
+    }
+
     const rect = canvas.getBoundingClientRect();
-    const touch = e.touches[0];
-    const tx = touch.clientX - rect.left;
-    const ty = touch.clientY - rect.top;
+    
+    // 현재 화면을 누르고 있는 모든 손가락 체크 (멀티터치 지원)
+    for (let i = 0; i < e.touches.length; i++) {
+        const touch = e.touches[i];
+        const tx = touch.clientX - rect.left;
+        const ty = touch.clientY - rect.top;
 
-    if (tx > canvas.width - 60 && ty < 50) {
-        isMuted = !isMuted;
-        if (isMuted) { sndBgm.pause(); bgmStarted = false; } else startBgm();
-        return;
+        // 뮤트 버튼 영역 (상단 우측)
+        if (tx > canvas.width - 60 && ty < 50) {
+            if (e.type === 'touchstart') {
+                isMuted = !isMuted;
+                if (isMuted) { sndBgm.pause(); bgmStarted = false; } else startBgm();
+            }
+            continue;
+        }
+
+        if (isGameOver && e.type === 'touchstart') {
+            init();
+            return;
+        }
+
+        // 하단 터치 조작 영역 (화면 절반 기준)
+        if (tx < canvas.width / 2) {
+            keys['ArrowLeft'] = true;
+        } else {
+            keys['ArrowRight'] = true;
+        }
     }
+}
 
-    if (isGameOver) {
-        init();
-    } else if (controlMode === 'mobile') {
-        joystick.active = true;
-        joystick.x = tx;
-        joystick.y = ty;
-        joystick.currX = tx;
-        joystick.currY = ty;
-    }
-}, {passive: false});
+canvas.addEventListener('touchstart', handleTouch, {passive: false});
+canvas.addEventListener('touchmove', handleTouch, {passive: false});
+canvas.addEventListener('touchend', handleTouch, {passive: false});
 
-canvas.addEventListener('touchmove', e => {
-    e.preventDefault();
-    if (joystick.active) {
-        const rect = canvas.getBoundingClientRect();
-        const touch = e.touches[0];
-        joystick.currX = touch.clientX - rect.left;
-        joystick.currY = touch.clientY - rect.top;
-    }
-}, {passive: false});
-
-canvas.addEventListener('touchend', () => { joystick.active = false; });
-
+// --- 기존 PC 이벤트 ---
 canvas.addEventListener('mousedown', e => {
     if (!controlMode) return;
     const rect = canvas.getBoundingClientRect();
@@ -139,32 +150,19 @@ function update() {
 
     player.vy += gravity; player.y += player.vy;
 
-    if (controlMode === 'pc') {
-        if (keys['ArrowLeft']) { player.x -= 7; player.facingRight = false; }
-        if (keys['ArrowRight']) { player.x += 7; player.facingRight = true; }
-    } else if (controlMode === 'mobile' && joystick.active) {
-        let dx = joystick.currX - joystick.x;
-        if (Math.abs(dx) > 5) { 
-            // 거리 비율에 따른 속도 계산 (최대 7)
-            let moveAmount = (dx / joystick.maxDist) * 7;
-            // 속도 제한 (Clamp)
-            if (moveAmount > 7) moveAmount = 7;
-            if (moveAmount < -7) moveAmount = -7;
-            
-            player.x += moveAmount;
-            player.facingRight = dx > 0;
-        }
-    }
+    // 이동 로직 (keys 객체를 사용하므로 PC와 모바일 로직이 하나로 합쳐짐)
+    if (keys['ArrowLeft']) { player.x -= 7; player.facingRight = false; }
+    if (keys['ArrowRight']) { player.x += 7; player.facingRight = true; }
 
     if (player.x + player.w < 0) player.x = canvas.width; if (player.x > canvas.width) player.x = -player.w;
 
+    // 발판/아이템/스크롤 로직 (기존과 동일)
     for (let i = platforms.length - 1; i >= 0; i--) {
         let plat = platforms[i];
         if (plat.type === PLAT_TYPE.MOVING) {
             let targetX = plat.centerX + Math.sin((frameCount + plat.offset) * MOVE_SPEED) * 100;
             plat.x = Math.max(0, Math.min(canvas.width - plat.w, targetX));
         }
-        
         if (plat.isBreaking) {
             plat.breakingTimer++;
             plat.x += (Math.random() - 0.5) * 6;
@@ -175,7 +173,6 @@ function update() {
                 continue;
             }
         }
-
         if (player.vy > 0 && player.x + 20 < plat.x + plat.w && player.x + player.w - 20 > plat.x &&
             player.y + player.h > plat.y && player.y + player.h < plat.y + plat.h + player.vy) {
             player.vy = player.normalJump;
@@ -240,22 +237,6 @@ function draw() {
     ctx.fillStyle = "#fed330"; ctx.textAlign = "right";
     ctx.fillText(`BEST: ${highScore}m`, canvas.width - 60, 32);
     ctx.font = "24px Arial"; ctx.fillText(isMuted ? "🔇" : "🔊", canvas.width - 15, 35);
-
-    if (controlMode === 'mobile' && joystick.active) {
-        ctx.beginPath();
-        ctx.arc(joystick.x, joystick.y, joystick.radius, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
-        ctx.fill();
-        
-        ctx.beginPath();
-        let angle = Math.atan2(joystick.currY - joystick.y, joystick.currX - joystick.x);
-        let dist = Math.min(joystick.maxDist, Math.hypot(joystick.currX - joystick.x, joystick.currY - joystick.y));
-        let headX = joystick.x + Math.cos(angle) * dist;
-        let headY = joystick.y + Math.sin(angle) * dist;
-        ctx.arc(headX, headY, 20, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
-        ctx.fill();
-    }
 
     if (isGameOver) {
         ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(0,0,canvas.width, canvas.height);
