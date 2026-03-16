@@ -69,30 +69,44 @@ function startBgm() {
     }
 }
 
-// 🔥 [모바일 버튼 전용 이벤트]
-// 손가락을 올리면 이동 시작
-btnLeft.addEventListener('touchstart', (e) => { e.preventDefault(); startBgm(); keys['ArrowLeft'] = true; }, {passive: false});
-btnRight.addEventListener('touchstart', (e) => { e.preventDefault(); startBgm(); keys['ArrowRight'] = true; }, {passive: false});
+// 🔥 [진짜 버튼 조작 로직]
+// 왼쪽 버튼
+btnLeft.addEventListener('touchstart', (e) => { 
+    e.preventDefault(); startBgm(); 
+    keys['ArrowLeft'] = true; btnLeft.classList.add('active'); 
+}, {passive: false});
+btnLeft.addEventListener('touchend', (e) => { 
+    e.preventDefault(); 
+    keys['ArrowLeft'] = false; btnLeft.classList.remove('active'); 
+}, {passive: false});
 
-// 손가락을 떼면 이동 중지
-btnLeft.addEventListener('touchend', (e) => { e.preventDefault(); keys['ArrowLeft'] = false; }, {passive: false});
-btnRight.addEventListener('touchend', (e) => { e.preventDefault(); keys['ArrowRight'] = false; }, {passive: false});
+// 오른쪽 버튼
+btnRight.addEventListener('touchstart', (e) => { 
+    e.preventDefault(); startBgm(); 
+    keys['ArrowRight'] = true; btnRight.classList.add('active'); 
+}, {passive: false});
+btnRight.addEventListener('touchend', (e) => { 
+    e.preventDefault(); 
+    keys['ArrowRight'] = false; btnRight.classList.remove('active'); 
+}, {passive: false});
 
-// 화면 어디든 터치하면 게임 재시작 및 사운드 처리
+// 화면 상단(사운드) 및 재시작 터치
 canvas.addEventListener('touchstart', (e) => {
     e.preventDefault();
     startBgm();
     const rect = canvas.getBoundingClientRect();
     const tx = e.touches[0].clientX - rect.left;
     const ty = e.touches[0].clientY - rect.top;
+    // 사운드 아이콘 영역
     if (tx > canvas.width - 60 && ty < 50) {
         isMuted = !isMuted;
         if (isMuted) { sndBgm.pause(); bgmStarted = false; } else startBgm();
     }
+    // 게임오버 시 화면 터치하면 재시작
     if (isGameOver) init();
 }, {passive: false});
 
-// PC 키보드 이벤트
+// 키보드 조작 유지 (PC 플레이용)
 window.addEventListener('keydown', e => { 
     startBgm(); keys[e.code] = true; 
     if (isGameOver && e.code === 'Space') init(); 
@@ -103,7 +117,7 @@ function update() {
     if (isGameOver || !controlMode) return;
     frameCount++; player.animTimer++;
     
-    // 캐릭터 애니메이션
+    // 플레이어 애니메이션
     if (player.animTimer % ANIM_SPEED === 0) {
         if (player.isBooster && player.vy < 0) player.frameX = 5;
         else if (player.vy >= 0) player.frameX = 6 + (Math.floor(player.animTimer / ANIM_SPEED) % 2);
@@ -112,7 +126,7 @@ function update() {
 
     player.vy += gravity; player.y += player.vy;
 
-    // 좌우 이동 (PC 키보드와 모바일 버튼 공용)
+    // 이동 처리 (버튼이 눌린 동안 keys 값이 true가 됨)
     if (keys['ArrowLeft']) { player.x -= 7; player.facingRight = false; }
     if (keys['ArrowRight']) { player.x += 7; player.facingRight = true; }
 
@@ -204,7 +218,7 @@ function draw() {
         ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(0,0,canvas.width, canvas.height);
         ctx.fillStyle = "#fff"; ctx.font = "30px Arial"; ctx.textAlign = "center";
         ctx.fillText("GAME OVER", canvas.width/2, canvas.height/2);
-        ctx.font = "16px Arial"; ctx.fillText(controlMode === 'pc' ? "Press Space to Retry" : "Tap Screen to Retry", canvas.width/2, canvas.height/2 + 80);
+        ctx.font = "16px Arial"; ctx.fillText(controlMode === 'pc' ? "Space 키로 재시작" : "화면을 터치하여 재시작", canvas.width/2, canvas.height/2 + 80);
     }
 }
 
