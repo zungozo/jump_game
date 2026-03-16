@@ -1,17 +1,16 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
+const modeUI = document.getElementById('mode-selection');
 
-// --- 1. 이미지 및 사운드 로드 (경로 앞에 ./ 추가) ---
+// --- 이미지 및 사운드 로드 ---
 const playerImg = new Image(); playerImg.src = './player.png'; 
 const boosterImg = new Image(); boosterImg.src = './booster.png'; 
 const bgImg = new Image(); bgImg.src = './background.png'; 
 
-// 사운드 파일 (대소문자 동생 말대로 수정)
-const sndJump = new Audio('./Jump.wav');   // 대문자 J
-const sndBreak = new Audio('./break.wav'); // 소문자 b
-const sndBgm = new Audio('./bgm.wav');     // 소문자 b
+const sndJump = new Audio('./Jump.wav'); 
+const sndBreak = new Audio('./break.wav');
+const sndBgm = new Audio('./bgm.wav'); 
 
-// 브라우저가 소리를 낼 준비를 미리 하도록 설정
 sndJump.preload = 'auto';
 sndBreak.preload = 'auto';
 sndBgm.loop = true; 
@@ -20,6 +19,10 @@ sndBgm.volume = 0.3;
 let player, platforms, items, score, highScore = 0, isGameOver, gravity, keys, frameCount, bgY;
 let bgmStarted = false;
 let isMuted = false;
+let controlMode = null; // 'pc' or 'mobile'
+
+// --- 조이스틱 변수 ---
+let joystick = { active: false, x: 0, y: 0, currX: 0, currY: 0, radius: 40, maxDist: 50 };
 
 const PLATFORM_GAP = 140;
 const ITEM_CHANCE = 0.05;
@@ -29,6 +32,14 @@ const SPRITE_SIZE = 32;
 const ANIM_SPEED = 6;   
 
 const PLAT_TYPE = { NORMAL: 'normal', MOVING: 'moving', BREAKING: 'breaking' };
+
+// 모드 선택 함수
+function selectMode(mode) {
+    controlMode = mode;
+    modeUI.style.display = 'none';
+    init();
+    if (!bgmStarted) startBgm();
+}
 
 function init() {
     player = { x: 168, y: 500, w: 64, h: 64, vy: 0, normalJump: -13, boosterJump: -38, isBooster: false, frameX: 0, animTimer: 0, facingRight: true };
@@ -45,18 +56,13 @@ function spawnPlatform(y) {
     if (type === PLAT_TYPE.NORMAL && Math.random() < ITEM_CHANCE) items.push({ x: x + w/2 - 15, y: y - 35, w: 30, h: 30, active: true });
 }
 
-// 🔥 사운드 재생 필살기 (재생 안 될 때 강제 로드 추가)
 function playSound(audio) {
     if (isMuted) return; 
-    
-    // 이미 재생 중이면 멈추고 처음부터 다시
     audio.pause();
     audio.currentTime = 0;
-    
     const playPromise = audio.play();
     if (playPromise !== undefined) {
         playPromise.catch(() => {
-            // 재생 실패 시 (보안 정책 등) 한번 더 시도
             audio.load();
             audio.play();
         });
@@ -64,13 +70,55 @@ function playSound(audio) {
 }
 
 function startBgm() {
-    if (!bgmStarted && !isMuted) {
+    if (!bgmStarted && !isMuted && controlMode) {
         sndBgm.play().then(() => { bgmStarted = true; }).catch(() => {});
     }
 }
 
-// 클릭 시 사운드 잠금 해제
+// --- 터치 이벤트 (모바일용) ---
+canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    startBgm();
+    const rect = canvas.getBoundingClientRect();
+    const touch = e.touches[0];
+    const tx = touch.clientX - rect.left;
+    const ty = touch.clientY - rect.top;
+
+    // 뮤트 버튼 영역 확인
+    if (tx > canvas.width - 60 && ty < 50) {
+        isMuted = !isMuted;
+        if (isMuted) { sndBgm.pause(); bgmStarted = false; } else startBgm();
+        return;
+    }
+
+    if (isGameOver) {
+        init();
+    } else if (controlMode === 'mobile') {
+        joystick.active = true;
+        joystick.x = tx;
+        joystick.y = ty;
+        joystick.currX = tx;
+        joystick.currY = ty;
+    }
+}, {passive: false});
+
+canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if (joystick.active) {
+        const rect = canvas.getBoundingClientRect();
+        const touch = e.touches[0];
+        joystick.currX = touch.clientX - rect.left;
+        joystick.currY = touch.clientY - rect.top;
+    }
+}, {passive: false});
+
+canvas.addEventListener('touchend', () => {
+    joystick.active = false;
+});
+
+// --- 기존 이벤트 리스너 ---
 canvas.addEventListener('mousedown', e => {
+    if (!controlMode) return;
     startBgm();
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
@@ -84,17 +132,18 @@ canvas.addEventListener('mousedown', e => {
 });
 
 window.addEventListener('keydown', e => {
+    if (!controlMode) return;
     startBgm();
     keys[e.code] = true;
     if (isGameOver && (e.code === 'Space')) init();
 });
-
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 
 function update() {
-    if (isGameOver) return;
+    if (isGameOver || !controlMode) return;
     frameCount++; player.animTimer++;
     
+    // 애니메이션 프레임 설정
     if (player.animTimer % ANIM_SPEED === 0) {
         if (player.isBooster && player.vy < 0) player.frameX = 5;
         else if (player.vy >= 0) player.frameX = 6 + (Math.floor(player.animTimer / ANIM_SPEED) % 2);
@@ -102,10 +151,22 @@ function update() {
     }
 
     player.vy += gravity; player.y += player.vy;
-    if (keys['ArrowLeft']) { player.x -= 7; player.facingRight = false; }
-    if (keys['ArrowRight']) { player.x += 7; player.facingRight = true; }
+
+    // 조작 로직 (PC/모바일 통합)
+    if (controlMode === 'pc') {
+        if (keys['ArrowLeft']) { player.x -= 7; player.facingRight = false; }
+        if (keys['ArrowRight']) { player.x += 7; player.facingRight = true; }
+    } else if (controlMode === 'mobile' && joystick.active) {
+        let dx = joystick.currX - joystick.x;
+        if (Math.abs(dx) > 10) { // 데드존 설정
+            player.x += (dx / joystick.maxDist) * 8;
+            player.facingRight = dx > 0;
+        }
+    }
+
     if (player.x + player.w < 0) player.x = canvas.width; if (player.x > canvas.width) player.x = -player.w;
 
+    // 발판 로직
     for (let i = platforms.length - 1; i >= 0; i--) {
         let plat = platforms[i];
         if (plat.type === PLAT_TYPE.MOVING) {
@@ -116,10 +177,7 @@ function update() {
         if (plat.isBreaking) {
             plat.breakingTimer++;
             plat.x += (Math.random() - 0.5) * 6;
-            // 발판이 부르르 떨리기 시작할 때 소리 재생
-            if (plat.breakingTimer === 1) {
-                playSound(sndBreak);
-            }
+            if (plat.breakingTimer === 1) playSound(sndBreak);
             if (plat.breakingTimer > BREAKING_TIME) {
                 platforms.splice(i, 1);
                 spawnPlatform(Math.min(...platforms.map(p => p.y)) - PLATFORM_GAP);
@@ -139,6 +197,7 @@ function update() {
         }
     }
 
+    // 아이템 로직
     items.forEach(item => {
         if (item.active && player.x < item.x + item.w && player.x + player.w > item.x &&
             player.y < item.y + item.h && player.y + player.h > item.y) {
@@ -147,6 +206,7 @@ function update() {
         }
     });
 
+    // 화면 스크롤
     if (player.y < 300) {
         let diff = 300 - player.y; player.y = 300; score += diff / 60;
         bgY = (bgY + diff * 0.4) % canvas.height;
@@ -161,8 +221,13 @@ function update() {
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!controlMode) return;
+
+    // 배경
     ctx.drawImage(bgImg, 0, bgY, canvas.width, canvas.height);
     ctx.drawImage(bgImg, 0, bgY - canvas.height, canvas.width, canvas.height);
+
+    // 발판 및 아이템
     platforms.forEach(plat => {
         if (plat.isBreaking) ctx.globalAlpha = 0.6;
         ctx.fillStyle = (plat.type === PLAT_TYPE.MOVING) ? "#45aaf2" : (plat.type === PLAT_TYPE.BREAKING ? "#fed330" : "#4ecdc4");
@@ -171,6 +236,8 @@ function draw() {
         ctx.globalAlpha = 1.0;
     });
     items.forEach(item => { if (item.active) ctx.drawImage(boosterImg, item.x, item.y, item.w, item.h); });
+
+    // 플레이어
     ctx.save();
     if (player.isBooster) { ctx.shadowBlur = 40; ctx.shadowColor = "white"; }
     if (!player.facingRight) {
@@ -180,19 +247,40 @@ function draw() {
         ctx.drawImage(playerImg, player.frameX * SPRITE_SIZE, 0, SPRITE_SIZE, SPRITE_SIZE, player.x, player.y, player.w, player.h);
     }
     ctx.restore();
+
+    // UI
     ctx.fillStyle = "rgba(0, 0, 0, 0.5)"; ctx.fillRect(0, 0, canvas.width, 50);
     ctx.fillStyle = "#fff"; ctx.font = "bold 18px Arial"; ctx.textAlign = "left";
     ctx.fillText(`SCORE: ${Math.floor(score)}m`, 20, 32);
     ctx.fillStyle = "#fed330"; ctx.textAlign = "right";
     ctx.fillText(`BEST: ${highScore}m`, canvas.width - 60, 32);
     ctx.font = "24px Arial"; ctx.fillText(isMuted ? "🔇" : "🔊", canvas.width - 15, 35);
+
+    // 가상 조이스틱 그리기
+    if (controlMode === 'mobile' && joystick.active) {
+        ctx.beginPath();
+        ctx.arc(joystick.x, joystick.y, joystick.radius, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
+        ctx.fill();
+        ctx.beginPath();
+        // 조이스틱 헤드 (제한 범위 내 이동)
+        let angle = Math.atan2(joystick.currY - joystick.y, joystick.currX - joystick.x);
+        let dist = Math.min(joystick.maxDist, Math.hypot(joystick.currX - joystick.x, joystick.currY - joystick.y));
+        let headX = joystick.x + Math.cos(angle) * dist;
+        let headY = joystick.y + Math.sin(angle) * dist;
+        ctx.arc(headX, headY, 20, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+        ctx.fill();
+    }
+
     if (isGameOver) {
         ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(0,0,canvas.width, canvas.height);
         ctx.fillStyle = "#fff"; ctx.font = "30px Arial"; ctx.textAlign = "center";
         ctx.fillText("GAME OVER", canvas.width/2, canvas.height/2);
-        ctx.font = "16px Arial"; ctx.fillText("Press Space to Retry", canvas.width/2, canvas.height/2 + 80);
+        ctx.font = "16px Arial"; 
+        ctx.fillText(controlMode === 'pc' ? "Press Space to Retry" : "Tap Screen to Retry", canvas.width/2, canvas.height/2 + 80);
     }
 }
 
 function gameLoop() { update(); draw(); requestAnimationFrame(gameLoop); }
-window.onload = () => { init(); gameLoop(); };
+gameLoop(); // onload 대신 루프는 미리 실행, selectMode 후에 데이터 업데이트 시작
