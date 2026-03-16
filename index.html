@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Infinity Jump - Booster Edition</title>
     <style>
+        /* 기본 배경 및 정렬 */
         body { 
             margin: 0; 
             display: flex; 
@@ -14,30 +15,37 @@
             background: #1a1a2e;
             font-family: 'Pretendard', sans-serif;
             overflow: hidden;
-            touch-action: none; /* 브라우저 기본 터치 동작 방지 */
+            touch-action: none; /* 모바일에서 불필요한 스크롤/확대 방지 */
         }
+
         #game-container {
             position: relative;
+            user-select: none; /* 텍스트 선택 방지 */
+            -webkit-user-select: none;
         }
+
         canvas { 
             background: linear-gradient(to bottom, #16213e, #0f3460); 
             border-radius: 12px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.5);
             display: block;
         }
-        /* 모드 선택 화면 스타일 */
+
+        /* 1. 모드 선택 화면 (처음에 나타남) */
         #mode-selection {
             position: absolute;
             top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0, 0, 0, 0.85);
+            background: rgba(0, 0, 0, 0.9);
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            z-index: 10;
+            z-index: 20;
             border-radius: 12px;
             color: white;
+            text-align: center;
         }
+
         .mode-btn {
             padding: 15px 40px;
             margin: 10px;
@@ -48,21 +56,69 @@
             background: #4ecdc4;
             color: #1a1a2e;
             font-weight: bold;
-            transition: 0.2s;
+            transition: transform 0.1s, background 0.2s;
         }
-        .mode-btn:hover { background: #fed330; }
+
+        .mode-btn:active {
+            transform: scale(0.95);
+        }
+
+        .mode-btn:hover {
+            background: #fed330;
+        }
+
+        /* 2. 모바일 컨트롤 가이드 (게임 중 하단에 표시) */
+        #mobile-ui {
+            position: absolute;
+            bottom: 0; left: 0; width: 100%; height: 200px;
+            display: none; /* JS에서 모바일 선택 시 block으로 변경 */
+            pointer-events: none; /* 터치 이벤트가 캔버스로 전달되게 함 */
+            z-index: 10;
+        }
+
+        .ctrl-btn-guide {
+            position: absolute;
+            bottom: 40px;
+            width: 70px; height: 70px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 24px;
+            backdrop-filter: blur(2px);
+        }
+
+        .left-guide { left: 40px; }
+        .right-guide { right: 40px; }
+
+        /* 게임 오버 시 모바일 가이드가 방해되지 않도록 투명도 조절 */
+        .is-over #mobile-ui {
+            opacity: 0.3;
+        }
     </style>
 </head>
 <body>
+
     <div id="game-container">
         <canvas id="gameCanvas" width="400" height="650"></canvas>
+        
+        <div id="mobile-ui">
+            <div class="ctrl-btn-guide left-guide">◀</div>
+            <div class="ctrl-btn-guide right-guide">▶</div>
+        </div>
+
         <div id="mode-selection">
-            <h1>Infinity Jump</h1>
-            <p>조작 모드를 선택하세요</p>
+            <h1 style="margin-bottom: 5px;">Infinity Jump</h1>
+            <p style="margin-bottom: 30px; color: #ccc;">Select Control Mode</p>
             <button class="mode-btn" onclick="selectMode('pc')">PC (방향키)</button>
-            <button class="mode-btn" onclick="selectMode('mobile')">Mobile (조이스틱)</button>
+            <button class="mode-btn" onclick="selectMode('mobile')">모바일 (터치)</button>
         </div>
     </div>
+
     <script src="game.js"></script>
+
 </body>
 </html>
