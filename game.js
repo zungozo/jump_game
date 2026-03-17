@@ -5,13 +5,14 @@ const mobileUI = document.getElementById('mobile-controls');
 const btnLeft = document.getElementById('btn-left');
 const btnRight = document.getElementById('btn-right');
 
-// --- 이미지 및 사운드 로드 ---
+// --- 1. 이미지 및 사운드 로드 ---
 const playerImg = new Image(); playerImg.src = './player.png'; 
 const boosterImg = new Image(); boosterImg.src = './booster.png'; 
 const bgImg = new Image(); bgImg.src = './background.png'; 
-const sndJump = new Audio('./Jump.wav'); 
-const sndBreak = new Audio('./break.wav');
-const sndBgm = new Audio('./bgm.wav'); 
+
+const sndJump = new Audio('./Jump.wav');   
+const sndBreak = new Audio('./break.wav'); 
+const sndBgm = new Audio('./bgm.wav');     
 
 sndJump.preload = 'auto';
 sndBreak.preload = 'auto';
@@ -21,9 +22,8 @@ sndBgm.volume = 0.3;
 let player, platforms, items, score, highScore = 0, isGameOver, gravity, keys, frameCount, bgY;
 let bgmStarted = false;
 let isMuted = false;
-let controlMode = null; 
+let controlMode = null;
 
-// 물리 속도 고정 변수
 let gameLoopId = null;
 let lastTime = performance.now();
 const TARGET_FPS = 60;
@@ -48,23 +48,18 @@ function selectMode(mode) {
 
 function init() {
     if (gameLoopId) cancelAnimationFrame(gameLoopId);
-
-    player = { 
-        x: 168, y: 500, w: 64, h: 64, 
-        vy: 0, 
-        normalJump: -15, 
-        boosterJump: -40, 
-        isBooster: false, 
-        frameX: 0, animTimer: 0, facingRight: true 
-    };
     
-    platforms = []; items = []; score = 0; frameCount = 0; bgY = 0; isGameOver = false; 
-    gravity = 0.6; 
+    // 🔥 재시작 시 BGM 상태 초기화 (다시 시작할 때 음악이 나오게 함)
+    bgmStarted = false; 
+    startBgm(); 
+
+    player = { x: 168, y: 500, w: 64, h: 64, vy: 0, normalJump: -15, boosterJump: -40, isBooster: false, frameX: 0, animTimer: 0, facingRight: true };
+    platforms = []; items = []; score = 0; frameCount = 0; bgY = 0; isGameOver = false; gravity = 0.6; 
     keys = { ArrowLeft: false, ArrowRight: false, KeyA: false, KeyD: false };
     
     platforms.push({ x: 150, y: 600, w: 100, h: 15, type: PLAT_TYPE.NORMAL });
     for (let i = 1; i < 7; i++) spawnPlatform(600 - (i * PLATFORM_GAP));
-
+    
     lastTime = performance.now();
     gameLoop(lastTime);
 }
@@ -79,77 +74,53 @@ function spawnPlatform(y) {
 
 function playSound(audio) {
     if (isMuted) return; 
-    audio.pause(); 
+    audio.pause();
     audio.currentTime = 0;
-    audio.play().catch(() => {});
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+        playPromise.catch(() => {
+            audio.load();
+            audio.play();
+        });
+    }
 }
 
 function startBgm() {
-    if (!bgmStarted && !isMuted && controlMode) {
-        sndBgm.play().then(() => { bgmStarted = true; }).catch(() => {});
+    // 🔥 이미 재생 중인지와 상관없이, 음소거가 아니고 모드가 선택됐다면 재생 시도
+    if (!isMuted && controlMode) {
+        sndBgm.play().then(() => { 
+            bgmStarted = true; 
+        }).catch(() => {
+            // 브라우저 정책상 클릭 전에는 재생이 안 될 수 있음
+            bgmStarted = false; 
+        });
     }
 }
 
-// 사운드 토글 함수 (공통 사용)
-function toggleMute() {
-    isMuted = !isMuted;
-    if (isMuted) {
-        sndBgm.pause();
-        bgmStarted = false;
-    } else {
-        startBgm();
-    }
-}
-
-// 모바일 터치 이벤트
-const handleTouch = (e, key, isDown) => {
-    e.preventDefault();
+const handleAction = (clientX, clientY) => {
     startBgm();
-    if (controlMode === 'mobile') keys[key] = isDown;
-};
-
-btnLeft.addEventListener('touchstart', (e) => handleTouch(e, 'ArrowLeft', true), {passive: false});
-btnLeft.addEventListener('touchend', (e) => handleTouch(e, 'ArrowLeft', false), {passive: false});
-btnRight.addEventListener('touchstart', (e) => handleTouch(e, 'ArrowRight', true), {passive: false});
-btnRight.addEventListener('touchend', (e) => handleTouch(e, 'ArrowRight', false), {passive: false});
-
-// 캔버스 클릭/터치 (사운드 제어 및 재시작)
-const handleCanvasAction = (clientX, clientY) => {
-    startBgm();
-    if (isGameOver) {
-        init();
-        return;
-    }
     const rect = canvas.getBoundingClientRect();
-    const tx = clientX - rect.left;
-    const ty = clientY - rect.top;
-    
-    // 우측 상단 스피커 아이콘 클릭 판정
-    if (tx > canvas.width - 60 && ty < 50) {
-        toggleMute();
+    const mx = clientX - rect.left;
+    const my = clientY - rect.top;
+    if (mx > canvas.width - 60 && my < 50) {
+        isMuted = !isMuted;
+        if (isMuted) { sndBgm.pause(); bgmStarted = false; } else startBgm();
+        return; 
     }
+    if (isGameOver) init();
 };
 
-canvas.addEventListener('touchstart', (e) => {
-    e.preventDefault();
-    handleCanvasAction(e.touches[0].clientX, e.touches[0].clientY);
-}, {passive: false});
+canvas.addEventListener('mousedown', e => { if (controlMode === 'pc') handleAction(e.clientX, e.clientY); });
+canvas.addEventListener('touchstart', e => { e.preventDefault(); handleAction(e.touches[0].clientX, e.touches[0].clientY); }, {passive: false});
 
-canvas.addEventListener('mousedown', (e) => {
-    if (controlMode === 'pc') handleCanvasAction(e.clientX, e.clientY);
-});
+const handleTouchBtn = (e, key, isDown) => { e.preventDefault(); startBgm(); if (controlMode === 'mobile') keys[key] = isDown; };
+btnLeft.addEventListener('touchstart', e => handleTouchBtn(e, 'ArrowLeft', true), {passive: false});
+btnLeft.addEventListener('touchend', e => handleTouchBtn(e, 'ArrowLeft', false), {passive: false});
+btnRight.addEventListener('touchstart', e => handleTouchBtn(e, 'ArrowRight', true), {passive: false});
+btnRight.addEventListener('touchend', e => handleTouchBtn(e, 'ArrowRight', false), {passive: false});
 
-// PC 키보드 이벤트
-window.addEventListener('keydown', e => { 
-    if (controlMode === 'pc') {
-        startBgm(); 
-        keys[e.code] = true; 
-        if (isGameOver && e.code === 'Space') init(); 
-    }
-});
-window.addEventListener('keyup', e => { 
-    if (controlMode === 'pc') keys[e.code] = false; 
-});
+window.addEventListener('keydown', e => { if (controlMode === 'pc') { startBgm(); keys[e.code] = true; if (isGameOver && e.code === 'Space') init(); } });
+window.addEventListener('keyup', e => { if (controlMode === 'pc') keys[e.code] = false; });
 
 function update(dt) {
     if (isGameOver || !controlMode) return;
@@ -190,10 +161,9 @@ function update(dt) {
         if (player.vy > 0 && player.x + 20 < plat.x + plat.w && player.x + player.w - 20 > plat.x &&
             player.y + player.h > plat.y && player.y + player.h < plat.y + plat.h + (player.vy * ratio) + 2) {
             player.vy = player.normalJump;
-            player.isBooster = false; playSound(sndJump);
-            if (plat.type === PLAT_TYPE.BREAKING && !plat.isBreaking) {
-                plat.isBreaking = true; plat.breakingTimer = 0;
-            }
+            player.isBooster = false;
+            playSound(sndJump);
+            if (plat.type === PLAT_TYPE.BREAKING && !plat.isBreaking) { plat.isBreaking = true; plat.breakingTimer = 0; }
         }
     }
 
@@ -214,16 +184,14 @@ function update(dt) {
         });
         items.forEach(item => { item.y += diff; if (item.y > canvas.height) items.splice(items.indexOf(item), 1); });
     }
-    if (player.y > canvas.height) { isGameOver = true; if (Math.floor(score) > highScore) highScore = Math.floor(score); sndBgm.pause(); bgmStarted = false; }
+    if (player.y > canvas.height) { isGameOver = true; if (Math.floor(score) > highScore) highScore = Math.floor(score); }
 }
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (!controlMode) return;
-
     ctx.drawImage(bgImg, 0, bgY, canvas.width, canvas.height);
     ctx.drawImage(bgImg, 0, bgY - canvas.height, canvas.width, canvas.height);
-
     platforms.forEach(plat => {
         if (plat.isBreaking) ctx.globalAlpha = 0.6;
         ctx.fillStyle = (plat.type === PLAT_TYPE.MOVING) ? "#45aaf2" : (plat.type === PLAT_TYPE.BREAKING ? "#fed330" : "#4ecdc4");
@@ -231,9 +199,7 @@ function draw() {
         ctx.fillStyle = "rgba(255, 255, 255, 0.3)"; ctx.fillRect(plat.x, plat.y, plat.w, 4);
         ctx.globalAlpha = 1.0;
     });
-
     items.forEach(item => { if (item.active) ctx.drawImage(boosterImg, item.x, item.y, item.w, item.h); });
-
     ctx.save();
     if (player.isBooster) { ctx.shadowBlur = 40; ctx.shadowColor = "white"; }
     if (!player.facingRight) {
@@ -243,24 +209,16 @@ function draw() {
         ctx.drawImage(playerImg, player.frameX * SPRITE_SIZE, 0, SPRITE_SIZE, SPRITE_SIZE, player.x, player.y, player.w, player.h);
     }
     ctx.restore();
-
-    // 상단 UI (점수 및 사운드 아이콘)
     ctx.fillStyle = "rgba(0, 0, 0, 0.5)"; ctx.fillRect(0, 0, canvas.width, 50);
     ctx.fillStyle = "#fff"; ctx.font = "bold 18px Arial"; ctx.textAlign = "left";
     ctx.fillText(`SCORE: ${Math.floor(score)}m`, 20, 32);
     ctx.fillStyle = "#fed330"; ctx.textAlign = "right";
     ctx.fillText(`BEST: ${highScore}m`, canvas.width - 60, 32);
-    
-    // 사운드 아이콘 그리기
-    ctx.font = "24px Arial";
-    ctx.fillText(isMuted ? "🔇" : "🔊", canvas.width - 15, 35);
-
+    ctx.font = "24px Arial"; ctx.fillText(isMuted ? "🔇" : "🔊", canvas.width - 15, 35);
     if (isGameOver) {
         ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(0,0,canvas.width, canvas.height);
         ctx.fillStyle = "#fff"; ctx.font = "30px Arial"; ctx.textAlign = "center";
         ctx.fillText("GAME OVER", canvas.width/2, canvas.height/2);
-        ctx.font = "16px Arial";
-        ctx.fillText(controlMode === 'pc' ? "Space 또는 클릭으로 재시작" : "화면을 터치하여 재시작", canvas.width/2, canvas.height/2 + 50);
     }
 }
 
